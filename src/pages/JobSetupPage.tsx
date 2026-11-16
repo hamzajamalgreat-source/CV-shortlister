@@ -1,0 +1,235 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import SkillTagInput from '../components/job-setup/SkillTagInput';
+import WeightInputGroup from '../components/job-setup/WeightInputGroup';
+import MandatoryRequirements from '../components/job-setup/MandatoryRequirements';
+import Layout from '../components/common/Layout';
+import type { EducationLevel, JobCriteria, ScoreWeights } from '../types';
+import { EDUCATION_LEVELS } from '../types';
+import { ArrowLeft, Briefcase, BookOpen, Zap } from 'lucide-react';
+
+const DEFAULT_WEIGHTS: ScoreWeights = { skills: 25, experience: 25, projects: 25, education: 25 };
+
+export default function JobSetupPage() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const isEditing = Boolean(id);
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
+  const [preferredSkills, setPreferredSkills] = useState<string[]>([]);
+  const [minExperience, setMinExperience] = useState(0);
+  const [education, setEducation] = useState<EducationLevel>('None');
+  const [weights, setWeights] = useState<ScoreWeights>(DEFAULT_WEIGHTS);
+  const [mandatoryReqs, setMandatoryReqs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(isEditing);
+  const [error, setError] = useState<string | null>(null);
+
+  const weightSum = weights.skills + weights.experience + weights.projects + weights.education;
+
+  useEffect(() => {
+    if (!id) return;
+    supabase.from('jobs').select('*').eq('id', id).single().then(({ data, error: err }) => {
+      if (err || !data) { setError('Job not found.'); setFetchLoading(false); return; }
+      const criteria = data.criteria as JobCriteria;
+      setTitle(data.title as string);
+      setDescription((data.description as string) ?? '');
+      setRequiredSkills(criteria.requiredSkills ?? []);
+      setPreferredSkills(criteria.preferredSkills ?? []);
+      setMinExperience(criteria.minExperienceYears ?? 0);
+      setEducation(criteria.educationRequirement ?? 'None');
+      setWeights(data.weights as ScoreWeights);
+      setMandatoryReqs((data.mandatory_requirements as string[]) ?? []);
+      setFetchLoading(false);
+    });
+  }, [id]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) { setError('Job title is required.'); return; }
+    if (weightSum !== 100) { setError('Score weights must total exactly 100%.'); return; }
+
+    setLoading(true);
+    setError(null);
+
+    const criteria: JobCriteria = {
+      requiredSkills,
+      preferredSkills,
+      minExperienceYears: minExperience,
+      educationRequirement: education,
+      weights,
+    };
+
+    const payload = {
+      title: title.trim(),
+      description: description.trim() || null,
+      criteria,
+      weights,
+      mandatory_requirements: mandatoryReqs,
+    };
+
+    let jobId = id;
+
+    if (isEditing && id) {
+      const { error: err } = await supabase.from('jobs').update(payload).eq('id', id);
+      if (err) { setError(err.message); setLoading(false); return; }
+    } else {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setError('Not authenticated.'); setLoading(false); return; }
+      const { data, error: err } = await supabase.from('jobs').insert({ ...payload, owner_id: user.id }).select('id').single();
+      if (err || !data) { setError(err?.message ?? 'Failed to create job.'); setLoading(false); return; }
+      jobId = (data as { id: string }).id;
+    }
+
+    navigate(`/jobs/${jobId}/upload`);
+  }
+
+  if (fetchLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)' }} aria-label="Loading">
+        <div className="relative w-16 h-16">
+          <div style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }} className="w-full h-full rounded-full animate-spin" />
+          <div className="absolute inset-2 rounded-full" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)' }} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Layout maxWidth="md">
+      {/* Header with gradient */}
+      <div style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }} className="rounded-3xl p-8 mb-8 text-white -mx-6 px-6">
+        <button
+          type="button"
+          onClick={() => navigate('/dashboard')}
+          className="flex items-center gap-2 text-white/80 hover:text-white mb-4 transition-colors focus:outline-none"
+        >
+          <ArrowLeft size={18} />
+          Back to Dashboard
+        </button>
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+            <Briefcase size={24} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold mb-1">{isEditing ? 'Edit Job' : 'New Job Opening'}</h1>
+            <p className="text-white/80 text-sm">Define screening criteria and scoring weights</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Form */}
+      <div className="space-y-8">
+        <form onSubmit={handleSubmit} noValidate className="space-y-8">
+
+          {/* Title */}
+          <div>
+            <label htmlFor="job-title" className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <Briefcase size={16} className="text-emerald-600" />
+              Job Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="job-title"
+              type="text"
+              required
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Senior Frontend Engineer"
+              className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 transition"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label htmlFor="job-description" className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <BookOpen size={16} className="text-emerald-600" />
+              Description
+            </label>
+            <textarea
+              id="job-description"
+              rows={3}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Brief overview of the role..."
+              className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 resize-none transition"
+            />
+          </div>
+
+          {/* Skills */}
+          <div className="space-y-5">
+            <SkillTagInput id="required-skills" label="Required Skills" tags={requiredSkills} onChange={setRequiredSkills} />
+            <SkillTagInput id="preferred-skills" label="Preferred Skills" tags={preferredSkills} onChange={setPreferredSkills} />
+          </div>
+
+          {/* Experience */}
+          <div>
+            <label htmlFor="min-experience" className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <Zap size={16} className="text-emerald-600" />
+              Minimum Years of Experience
+            </label>
+            <input
+              id="min-experience"
+              type="number"
+              min={0}
+              max={50}
+              value={minExperience}
+              onChange={e => setMinExperience(Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)))}
+              className="w-32 rounded-lg border-2 border-gray-200 px-4 py-3 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 transition"
+            />
+          </div>
+
+          {/* Education */}
+          <div>
+            <label htmlFor="education-req" className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <BookOpen size={16} className="text-emerald-600" />
+              Education Requirement
+            </label>
+            <select
+              id="education-req"
+              value={education}
+              onChange={e => setEducation(e.target.value as EducationLevel)}
+              className="rounded-lg border-2 border-gray-200 px-4 py-3 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 transition"
+            >
+              {EDUCATION_LEVELS.map(level => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Weights */}
+          <WeightInputGroup weights={weights} onChange={setWeights} />
+
+          {/* Mandatory Requirements */}
+          <MandatoryRequirements requirements={mandatoryReqs} onChange={setMandatoryReqs} />
+
+          {/* Error */}
+          {error && (
+            <div role="alert" className="rounded-lg bg-red-50 border-2 border-red-200 px-4 py-3 flex items-start gap-3">
+              <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg className="w-3 h-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+              </div>
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={loading || weightSum !== 100}
+            style={{
+              background: loading || weightSum !== 100 ? '#d1d5db' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            }}
+            className="w-full rounded-lg px-4 py-3 text-sm font-semibold text-white hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed transition-all transform hover:scale-105 disabled:hover:scale-100"
+          >
+            {loading ? 'Saving' : isEditing ? 'Save Changes' : 'Create Job & Upload CVs ?'}
+          </button>
+        </form>
+      </div>
+    </Layout>
+  );
+}
+
+
