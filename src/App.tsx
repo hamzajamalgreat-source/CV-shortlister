@@ -1,6 +1,7 @@
 ﻿import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import SignUpPage from "./pages/SignUpPage";
+import Home from "./pages/Home";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 
 export default function App() {
@@ -14,10 +15,7 @@ export default function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <div style={{ minHeight: "100vh", backgroundColor: "#0a0e27", color: "white", padding: "40px", textAlign: "center" }}>
-                <h1>Dashboard</h1>
-                <p>Loading...</p>
-              </div>
+              <Home />
             </ProtectedRoute>
           }
         />
