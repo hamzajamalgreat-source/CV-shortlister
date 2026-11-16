@@ -29,6 +29,59 @@ export default function JobSetupPage() {
   const [error, setError] = useState<string | null>(null);
 
   const weightSum = weights.skills + weights.experience + weights.projects + weights.education;
+  const [jobDescFile, setJobDescFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleJobDescUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.currentTarget.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!validTypes.includes(file.type)) {
+      setError('Only PDF and DOCX files are supported');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File size must be less than 10MB');
+      return;
+    }
+
+    setJobDescFile(file);
+    setUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('filename', file.name);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const response = await fetch('/api/process-job', {
+        method: 'POST',
+        body: formData,
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+
+      if (!response.ok) throw new Error('Failed to parse job description');
+
+      const result = await response.json();
+      if (result.criteria) {
+        setTitle(result.criteria.title || title);
+        setDescription(result.criteria.description || description);
+        setRequiredSkills(result.criteria.requiredSkills || requiredSkills);
+        setPreferredSkills(result.criteria.preferredSkills || preferredSkills);
+        setMinExperience(result.criteria.minExperienceYears || minExperience);
+        setEducation(result.criteria.educationRequirement || education);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to process file');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -124,6 +177,27 @@ export default function JobSetupPage() {
       {/* Form */}
       <div className="space-y-8">
         <form onSubmit={handleSubmit} noValidate className="space-y-8">
+          {/* Job Description File Upload */}
+          <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 p-6">
+            <label htmlFor="job-desc-file" className="block text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <BookOpen size={16} className="text-emerald-600" />
+              Auto-fill from Job Description File (Optional)
+            </label>
+            <input
+              id="job-desc-file"
+              type="file"
+              accept=".pdf,.docx"
+              onChange={handleJobDescUpload}
+              disabled={uploading}
+              className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            />
+            {jobDescFile && (
+              <p className="text-xs text-emerald-700 mt-2 flex items-center gap-2">
+                ? {uploading ? 'Processing...' : 'Uploaded'}: {jobDescFile.name}
+              </p>
+            )}
+            <p className="text-xs text-gray-600 mt-2">Upload a PDF or DOCX to auto-fill title, description, and required skills</p>
+          </div>
 
           {/* Title */}
           <div>
@@ -231,5 +305,7 @@ export default function JobSetupPage() {
     </Layout>
   );
 }
+
+
 
 
