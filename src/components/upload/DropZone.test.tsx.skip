@@ -1,0 +1,207 @@
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import DropZone from './DropZone';
+
+describe('DropZone', () => {
+  it('renders upload area with correct instructions', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    expect(screen.getByText('Upload CV Files')).toBeDefined();
+    expect(screen.getByText(/Drag and drop PDF or DOCX files/)).toBeDefined();
+    expect(screen.getByText('Max 10 MB per file')).toBeDefined();
+  });
+
+  it('displays file type badges', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const pdfBadges = screen.getAllByText('PDF');
+    const docxBadges = screen.getAllByText('DOCX');
+    expect(pdfBadges.length).toBeGreaterThan(0);
+    expect(docxBadges.length).toBeGreaterThan(0);
+  });
+
+  it('accepts valid PDF files', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const file = new File(['test'], 'resume.pdf', { type: 'application/pdf' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(onFilesSelected).toHaveBeenCalledWith([file]);
+  });
+
+  it('accepts valid DOCX files', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const file = new File(['test'], 'resume.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(onFilesSelected).toHaveBeenCalledWith([file]);
+  });
+
+  it('rejects files with incorrect type', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const file = new File(['test'], 'document.txt', { type: 'text/plain' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(screen.getByText(/only PDF and DOCX accepted/)).toBeDefined();
+    expect(onFilesSelected).not.toHaveBeenCalled();
+  });
+
+  it('rejects files exceeding 10 MB', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    // Create a large file (11 MB)
+    const largeFile = new File(new Array(11 * 1024 * 1024).fill('x'), 'large.pdf', {
+      type: 'application/pdf',
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [largeFile] } });
+
+    expect(screen.getByText(/exceeds 10 MB limit/)).toBeDefined();
+    expect(onFilesSelected).not.toHaveBeenCalled();
+  });
+
+  it('separates valid and invalid files', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const validFile = new File(['test'], 'resume.pdf', { type: 'application/pdf' });
+    const invalidFile = new File(['test'], 'doc.txt', { type: 'text/plain' });
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [validFile, invalidFile] } });
+
+    expect(onFilesSelected).toHaveBeenCalledWith([validFile]);
+    expect(screen.getByText(/only PDF and DOCX accepted/)).toBeDefined();
+  });
+
+  it('supports drag-and-drop', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files/ });
+    const file = new File(['test'], 'resume.pdf', { type: 'application/pdf' });
+
+    fireEvent.drop(dropZone, {
+      dataTransfer: {
+        files: [file],
+      },
+    });
+
+    expect(onFilesSelected).toHaveBeenCalledWith([file]);
+  });
+
+  it('shows drop visual feedback when dragging', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files/ });
+
+    fireEvent.dragOver(dropZone);
+    expect(screen.getByText('Drop your CVs here')).toBeDefined();
+
+    fireEvent.dragLeave(dropZone);
+    expect(screen.getByText('Upload CV Files')).toBeDefined();
+  });
+
+  it('shows ready-to-upload feedback during drag', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files/ });
+
+    fireEvent.dragOver(dropZone);
+    expect(screen.getByText('Ready to upload')).toBeDefined();
+  });
+
+  it('supports keyboard activation', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files/ });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    const clickSpy = vi.spyOn(input, 'click');
+    fireEvent.keyDown(dropZone, { key: 'Enter' });
+
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it('is disabled when disabled prop is true', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} disabled={true} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files/ });
+    expect(dropZone.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('does not accept files when disabled', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} disabled={true} />);
+
+    const file = new File(['test'], 'resume.pdf', { type: 'application/pdf' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(onFilesSelected).not.toHaveBeenCalled();
+  });
+
+  it('clears errors after successful file selection', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    // Select invalid file first
+    const invalidFile = new File(['test'], 'doc.txt', { type: 'text/plain' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [invalidFile] } });
+    expect(screen.getByText(/only PDF and DOCX accepted/)).toBeDefined();
+
+    // Select valid file
+    const validFile = new File(['test'], 'resume.pdf', { type: 'application/pdf' });
+    fireEvent.change(input, { target: { files: [validFile] } });
+
+    expect(screen.queryByText(/only PDF and DOCX accepted/)).toBeNull();
+    expect(onFilesSelected).toHaveBeenCalledWith([validFile]);
+  });
+
+  it('displays multiple errors', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const invalidFile1 = new File(['test'], 'doc.txt', { type: 'text/plain' });
+    const invalidFile2 = new File(['test'], 'image.jpg', { type: 'image/jpeg' });
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [invalidFile1, invalidFile2] } });
+
+    expect(screen.getByText(/doc.txt.*only PDF and DOCX/)).toBeDefined();
+    expect(screen.getByText(/image.jpg.*only PDF and DOCX/)).toBeDefined();
+  });
+
+  it('has correct aria labels for accessibility', () => {
+    const onFilesSelected = vi.fn();
+    render(<DropZone onFilesSelected={onFilesSelected} />);
+
+    const dropZone = screen.getByRole('button', { name: /Drop CV files here or click to select/ });
+    expect(dropZone).toBeDefined();
+  });
+});
+
